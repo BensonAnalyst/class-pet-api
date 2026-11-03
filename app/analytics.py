@@ -3,14 +3,21 @@
 A row is a dict: {"enrollment_id": str, "delta": int, "created_at": ISO-8601 str}.
 """
 from __future__ import annotations
-
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from statistics import mean, pstdev
 
 
+_FRACTION = re.compile(r"\.(\d+)")
+
+
 def _ts(value: str) -> datetime:
-    return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    """Parse Supabase timestamps. Python < 3.11 only accepts 3 or 6 fractional digits, but Postgres
+    drops trailing zeros (e.g. '.12345'), so normalise the fraction to 6 digits first."""
+    v = value.replace("Z", "+00:00")
+    v = _FRACTION.sub(lambda m: "." + (m.group(1) + "000000")[:6], v, count=1)
+    return datetime.fromisoformat(v)
 
 
 def totals(rows: list[dict]) -> dict[str, int]:
