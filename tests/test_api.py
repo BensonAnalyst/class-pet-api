@@ -63,3 +63,10 @@ def test_point_validation():
     app.dependency_overrides[get_source] = lambda: FakeSource()
     assert client.post("/v1/points", json={"enrollment_id": "a", "label": "Helpful", "delta": 99}).status_code == 422
     assert client.post("/v1/points", json={"enrollment_id": "a", "label": "Helpful", "delta": 2}).status_code == 201
+
+
+def test_ts_handles_postgres_fractions():
+    # Postgres trims trailing zeros, giving 1-6 fractional digits; Python 3.10 rejects most of them
+    for v in ["2026-11-04T02:04:35+00:00", "2026-11-04T02:04:35.1+00:00", "2026-11-04T02:04:35.12345+00:00",
+              "2026-11-04T02:04:35.123456+00:00", "2026-11-04T02:04:35.12Z"]:
+        assert analytics._ts(v).year == 2026

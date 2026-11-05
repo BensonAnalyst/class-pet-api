@@ -3,7 +3,7 @@ from __future__ import annotations
 from fastapi import Depends, FastAPI, Header, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from . import analytics
+from . import analytics, insights
 from .datasource import SupabaseSource
 
 app = FastAPI(title="Class Pet Garden Analytics API", version="1.0.0",
@@ -70,6 +70,41 @@ def at_risk(class_id: str, window_days: int = Query(14, ge=7, le=60), src: Supab
     for r in out:
         r["name"] = names.get(r["enrollment_id"], r["enrollment_id"])
     return out
+
+
+def get_llm_factory():
+    """Returns a callable that builds the OpenAI client lazily, so the key is only needed when a
+    model call is actually required. Tests override this dependency with a fake."""
+    return insights.make_client
+
+
+@app.get("/v1/classes/{class_id}/insights")
+def class_insights(class_id: str, window_days: int = Query(14, ge=7, le=60),
+                   src: SupabaseSource = Depends(get_source), make_llm=Depends(get_llm_factory)):
+    """Plain-English weekly summary for the teacher. Stats are computed locally; students are
+    pseudonymised before the text model sees anything."""
+    try:
+        enrolls = src.enrollments(class_id)
+        rows = src.history([e["id"] for e in enrolls])
+    except PermissionError as e:
+        raise HTTPException(403, str(e))
+    digest, alias_to_id = insights.build_digest(enrolls, rows, window_days)
+    if not digest["flagged"]:   # nothing to explain: skip the paid call
+        return {"headline": "No students need attention right now",
+                "summary": f"No student dropped in the last {window_days} days.",
+                "students_to_check": [], "class_actions": [], "usage": None}
+    try:
+        out, usage = insights.generate(make_llm(), digest)
+    except insights.InsightsUnavailable as e:
+        raise HTTPException(503 if "not set" in str(e) else 502, str(e))
+    except Exception:           # network / upstream error: never leak details or the key
+        raise HTTPException(502, "Insight generation failed upstream")
+    names = _names(enrolls)
+    body = out.model_dump()
+    for s in body["students_to_check"]:           # map pseudonyms back to real names, locally
+        s["name"] = names.get(alias_to_id.get(s["alias"], ""), s["alias"])
+    body["usage"] = usage
+    return body
 
 
 @app.post("/v1/points", status_code=201)

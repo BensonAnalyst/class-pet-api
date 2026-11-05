@@ -3,6 +3,7 @@
 A row is a dict: {"enrollment_id": str, "delta": int, "created_at": ISO-8601 str}.
 """
 from __future__ import annotations
+
 import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
