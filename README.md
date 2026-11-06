@@ -49,6 +49,39 @@ Supabase (RLS) -> point_history -> analytics.at_risk (plain Python, deterministi
 | **No call when nobody is flagged** | The endpoint returns immediately: zero cost, zero latency. |
 | **Cap of 15 flagged students per prompt** | Keeps the prompt size, and the cost, bounded for large classes. |
 
+### Example output (synthetic data)
+
+A live call on 6 Nov 2026 with made-up students (`gpt-4o-mini`, 323 prompt and 137 completion tokens). The model saw only this pseudonymised digest:
+
+```json
+{"window_days": 14, "class_size": 7, "class_net_points_all_time": 42, "students_with_no_activity_all_time": 0,
+ "flagged": [{"alias": "S7", "recent_net_points": -2, "prior_net_points": 8, "change": -10, "z_score_vs_class": -2.45,
+              "reasons": ["negative_net_points", "sharp_drop_vs_class"],
+              "most_negative_labels_recent": [{"label": "Talking in class", "net": -2}]}]}
+```
+
+and returned (schema-validated):
+
+```json
+{
+  "headline": "Check-in on S7's Recent Performance",
+  "summary": "S7 has experienced a significant drop in points recently, which may indicate some challenges in class. It's important to support them during this time.",
+  "students_to_check": [
+    {
+      "alias": "S7",
+      "observation": "S7's points dropped sharply from 8 to -2, mainly due to talking in class.",
+      "suggested_action": "Have a one-on-one chat with S7 to discuss how they are feeling in class and encourage them to share their thoughts."
+    }
+  ],
+  "class_actions": [
+    "Remind the class about the importance of staying focused during lessons.",
+    "Encourage positive behavior by recognizing students who are following class rules."
+  ]
+}
+```
+
+Known weakness seen in this run: the model sometimes attributes a cause ("mainly due to...") and suggests generic class-wide actions that the data does not support. A prompt rule against both is the next iteration.
+
 ### Cost per request
 
 Every response includes `usage` (model, prompt tokens, completion tokens). To see a dollar estimate, set `OPENAI_PRICE_IN_PER_1M` and `OPENAI_PRICE_OUT_PER_1M` from [OpenAI's pricing page](https://openai.com/api/pricing/); prices are read from the environment so they never go stale in code.
